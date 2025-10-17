@@ -7,6 +7,7 @@ description = "DisplayInterface implementation for STM32 FSMC peripheral using E
 repository = "https://github.com/kriomant/embassy-stm32-fsmc-display-interface"
 keywords = ["embedded", "stm32", "fsmc", "display"]
 categories = ["embedded", "no-std"]
+license = "MIT"
 
 [dependencies]
 embassy-stm32 = { version = "0.1.0", git = "https://github.com/embassy-rs/embassy", default-features = false }
