@@ -13,3 +13,6 @@ test:
         echo "CHIP: $chip"
         (cd example; cargo build --no-default-features --features "embassy-stm32/$chip")
     done
+
+publish:
+    (cd lib; cargo publish --no-verify)
