@@ -14,5 +14,5 @@ test:
         (cd example; cargo build --no-default-features --features "embassy-stm32/$chip")
     done
 
-publish:
-    (cd lib; cargo publish --no-verify)
+release *args:
+    (cd lib; jj run-git cargo release --no-verify --tag-prefix= {{args}})
