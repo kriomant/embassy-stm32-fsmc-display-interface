@@ -10,5 +10,5 @@ categories = ["embedded", "no-std"]
 license = "MIT"
 
 [dependencies]
-embassy-stm32 = { version = "0.1.0", git = "https://github.com/embassy-rs/embassy", default-features = false }
+embassy-stm32 = { version = "0.4.0", default-features = false }
 display-interface = { version = "0.5.0", default-features = false }

@@ -31,9 +31,11 @@
 //! ```
 
 use display_interface::{DataFormat, DisplayError, WriteOnlyDataCommand};
-use embassy_stm32::gpio::Pin;
+use embassy_stm32::gpio::{AfType, Flex, Pin, Speed, Pull, OutputType};
 use embassy_stm32::pac::fsmc::vals::{Accmod, Cpsize, Mtyp, Waitcfg, Waitpol};
 use embassy_stm32::pac::fsmc::vals::Mwid;
+use embassy_stm32::rcc;
+use embassy_stm32::Peri;
 
 /// STM32F407 Reference manual, 36.5.6
 /// Register base address for FSMC
@@ -139,61 +141,20 @@ impl Default for Timing {
 /// - `RW`: Write Enable
 /// - `RS`: Register Select (Data/Command, sometimes called D/C)
 /// - `D0`-`D15`: 16-bit data bus
-pub struct FsmcLcd<
-    CS,
-    RD,
-    RW,
-    RS,
-    D0,
-    D1,
-    D2,
-    D3,
-    D4,
-    D5,
-    D6,
-    D7,
-    D8,
-    D9,
-    D10,
-    D11,
-    D12,
-    D13,
-    D14,
-    D15,
-> {
-    cs: CS,
-    rd: RD,
-    rw: RW,
-    rs: RS,
-    data_pins: (
-        D0, D1, D2, D3, D4, D5, D6, D7, D8, D9, D10, D11, D12, D13, D14, D15,
+pub struct FsmcLcd<'d> {
+    _cs: Flex<'d>,
+    _rd: Flex<'d>,
+    _rw: Flex<'d>,
+    _rs: Flex<'d>,
+    _data_pins: (
+        Flex<'d>, Flex<'d>, Flex<'d>, Flex<'d>,
+        Flex<'d>, Flex<'d>, Flex<'d>, Flex<'d>,
+        Flex<'d>, Flex<'d>, Flex<'d>, Flex<'d>,
+        Flex<'d>, Flex<'d>, Flex<'d>, Flex<'d>,
     ),
 }
 
-impl<
-        CS: Pin,
-        RD: Pin,
-        RW: Pin,
-        RS: Pin,
-        D0: Pin,
-        D1: Pin,
-        D2: Pin,
-        D3: Pin,
-        D4: Pin,
-        D5: Pin,
-        D6: Pin,
-        D7: Pin,
-        D8: Pin,
-        D9: Pin,
-        D10: Pin,
-        D11: Pin,
-        D12: Pin,
-        D13: Pin,
-        D14: Pin,
-        D15: Pin,
-    >
-    FsmcLcd<CS, RD, RW, RS, D0, D1, D2, D3, D4, D5, D6, D7, D8, D9, D10, D11, D12, D13, D14, D15>
-{
+impl<'d> FsmcLcd<'d> {
     /// Creates a new FSMC LCD interface
     ///
     /// # Arguments
@@ -225,20 +186,21 @@ impl<
     /// );
     /// ```
     pub fn new(
-        cs: CS,
-        rd: RD,
-        rw: RW,
-        rs: RS,
+        cs: Peri<'d, impl Pin>,
+        rd: Peri<'d, impl Pin>,
+        rw: Peri<'d, impl Pin>,
+        rs: Peri<'d, impl Pin>,
         data_pins: (
-            D0, D1, D2, D3, D4, D5, D6, D7, D8, D9, D10, D11, D12, D13, D14, D15,
+            Peri<'d, impl Pin>, Peri<'d, impl Pin>, Peri<'d, impl Pin>, Peri<'d, impl Pin>,
+            Peri<'d, impl Pin>, Peri<'d, impl Pin>, Peri<'d, impl Pin>, Peri<'d, impl Pin>,
+            Peri<'d, impl Pin>, Peri<'d, impl Pin>, Peri<'d, impl Pin>, Peri<'d, impl Pin>,
+            Peri<'d, impl Pin>, Peri<'d, impl Pin>, Peri<'d, impl Pin>, Peri<'d, impl Pin>,
         ),
         read_timing: &Timing,
         write_timing: &Timing,
     ) -> Self {
-        use embassy_stm32::rcc::low_level::RccPeripheral as _;
-
         // Enable FSMC peripheral clock
-        embassy_stm32::peripherals::FSMC::enable_and_reset();
+        rcc::enable_and_reset::<embassy_stm32::peripherals::FSMC>();
 
         let fsmc = unsafe { embassy_stm32::pac::fsmc::Fsmc::from_ptr(REG_ADDRESS as _) };
 
@@ -247,7 +209,7 @@ impl<
             // Disable synchronous writes
             w.set_cburstrw(false);
             // Don't split burst transactions (doesn't matter for LCD mode)
-            w.set_cpsize(Cpsize::NOBURSTSPLIT);
+            w.set_cpsize(Cpsize::NO_BURST_SPLIT);
             // Ignore wait signal (asynchronous mode)
             w.set_asyncwait(false);
             // Enable extended mode, for different read and write timings
@@ -257,9 +219,9 @@ impl<
             // Allow write operations
             w.set_wren(true);
             // Default wait timing
-            w.set_waitcfg(Waitcfg::BEFOREWAITSTATE);
+            w.set_waitcfg(Waitcfg::BEFORE_WAIT_STATE);
             // Default wait polarity
-            w.set_waitpol(Waitpol::ACTIVELOW);
+            w.set_waitpol(Waitpol::ACTIVE_LOW);
             // Disable burst reads
             w.set_bursten(false);
             // Enable NOR flash operations
@@ -293,34 +255,61 @@ impl<
         });
 
         // Configure all pins as FSMC alternate function (AF12)
-        cs.set_as_af(12, embassy_stm32::gpio::low_level::AFType::OutputPushPull);
-        rd.set_as_af(12, embassy_stm32::gpio::low_level::AFType::OutputPushPull);
-        rw.set_as_af(12, embassy_stm32::gpio::low_level::AFType::OutputPushPull);
-        rs.set_as_af(12, embassy_stm32::gpio::low_level::AFType::OutputPushPull);
+        let af_type = AfType::output_pull(OutputType::PushPull, Speed::VeryHigh, Pull::None);
 
-        data_pins.0.set_as_af(12, embassy_stm32::gpio::low_level::AFType::OutputPushPull);
-        data_pins.1.set_as_af(12, embassy_stm32::gpio::low_level::AFType::OutputPushPull);
-        data_pins.2.set_as_af(12, embassy_stm32::gpio::low_level::AFType::OutputPushPull);
-        data_pins.3.set_as_af(12, embassy_stm32::gpio::low_level::AFType::OutputPushPull);
-        data_pins.4.set_as_af(12, embassy_stm32::gpio::low_level::AFType::OutputPushPull);
-        data_pins.5.set_as_af(12, embassy_stm32::gpio::low_level::AFType::OutputPushPull);
-        data_pins.6.set_as_af(12, embassy_stm32::gpio::low_level::AFType::OutputPushPull);
-        data_pins.7.set_as_af(12, embassy_stm32::gpio::low_level::AFType::OutputPushPull);
-        data_pins.8.set_as_af(12, embassy_stm32::gpio::low_level::AFType::OutputPushPull);
-        data_pins.9.set_as_af(12, embassy_stm32::gpio::low_level::AFType::OutputPushPull);
-        data_pins.10.set_as_af(12, embassy_stm32::gpio::low_level::AFType::OutputPushPull);
-        data_pins.11.set_as_af(12, embassy_stm32::gpio::low_level::AFType::OutputPushPull);
-        data_pins.12.set_as_af(12, embassy_stm32::gpio::low_level::AFType::OutputPushPull);
-        data_pins.13.set_as_af(12, embassy_stm32::gpio::low_level::AFType::OutputPushPull);
-        data_pins.14.set_as_af(12, embassy_stm32::gpio::low_level::AFType::OutputPushPull);
-        data_pins.15.set_as_af(12, embassy_stm32::gpio::low_level::AFType::OutputPushPull);
+        let mut cs_flex = Flex::new(cs);
+        cs_flex.set_as_af_unchecked(12, af_type);
+        let mut rd_flex = Flex::new(rd);
+        rd_flex.set_as_af_unchecked(12, af_type);
+        let mut rw_flex = Flex::new(rw);
+        rw_flex.set_as_af_unchecked(12, af_type);
+        let mut rs_flex = Flex::new(rs);
+        rs_flex.set_as_af_unchecked(12, af_type);
+
+        let mut d0_flex = Flex::new(data_pins.0);
+        d0_flex.set_as_af_unchecked(12, af_type);
+        let mut d1_flex = Flex::new(data_pins.1);
+        d1_flex.set_as_af_unchecked(12, af_type);
+        let mut d2_flex = Flex::new(data_pins.2);
+        d2_flex.set_as_af_unchecked(12, af_type);
+        let mut d3_flex = Flex::new(data_pins.3);
+        d3_flex.set_as_af_unchecked(12, af_type);
+        let mut d4_flex = Flex::new(data_pins.4);
+        d4_flex.set_as_af_unchecked(12, af_type);
+        let mut d5_flex = Flex::new(data_pins.5);
+        d5_flex.set_as_af_unchecked(12, af_type);
+        let mut d6_flex = Flex::new(data_pins.6);
+        d6_flex.set_as_af_unchecked(12, af_type);
+        let mut d7_flex = Flex::new(data_pins.7);
+        d7_flex.set_as_af_unchecked(12, af_type);
+        let mut d8_flex = Flex::new(data_pins.8);
+        d8_flex.set_as_af_unchecked(12, af_type);
+        let mut d9_flex = Flex::new(data_pins.9);
+        d9_flex.set_as_af_unchecked(12, af_type);
+        let mut d10_flex = Flex::new(data_pins.10);
+        d10_flex.set_as_af_unchecked(12, af_type);
+        let mut d11_flex = Flex::new(data_pins.11);
+        d11_flex.set_as_af_unchecked(12, af_type);
+        let mut d12_flex = Flex::new(data_pins.12);
+        d12_flex.set_as_af_unchecked(12, af_type);
+        let mut d13_flex = Flex::new(data_pins.13);
+        d13_flex.set_as_af_unchecked(12, af_type);
+        let mut d14_flex = Flex::new(data_pins.14);
+        d14_flex.set_as_af_unchecked(12, af_type);
+        let mut d15_flex = Flex::new(data_pins.15);
+        d15_flex.set_as_af_unchecked(12, af_type);
 
         Self {
-            cs,
-            rd,
-            rw,
-            rs,
-            data_pins,
+            _cs: cs_flex,
+            _rd: rd_flex,
+            _rw: rw_flex,
+            _rs: rs_flex,
+            _data_pins: (
+                d0_flex, d1_flex, d2_flex, d3_flex,
+                d4_flex, d5_flex, d6_flex, d7_flex,
+                d8_flex, d9_flex, d10_flex, d11_flex,
+                d12_flex, d13_flex, d14_flex, d15_flex,
+            ),
         }
     }
 
@@ -345,72 +334,10 @@ impl<
             core::ptr::write_volatile(DATA_ADDRESS as *mut u16, value);
         }
     }
-
-    /// Releases the FSMC peripheral and returns the pins
-    ///
-    /// This disables the FSMC peripheral and returns ownership of all pins.
-    pub fn release(
-        self,
-    ) -> (
-        CS,
-        RD,
-        RW,
-        RS,
-        (D0, D1, D2, D3, D4, D5, D6, D7, D8, D9, D10, D11, D12, D13, D14, D15),
-    ) {
-        use embassy_stm32::rcc::low_level::RccPeripheral as _;
-        embassy_stm32::peripherals::FSMC::disable();
-
-        (self.cs, self.rd, self.rw, self.rs, self.data_pins)
-    }
 }
 
 // Implement DisplayInterface WriteOnlyDataCommand trait
-impl<
-        CS: Pin,
-        RD: Pin,
-        RW: Pin,
-        RS: Pin,
-        D0: Pin,
-        D1: Pin,
-        D2: Pin,
-        D3: Pin,
-        D4: Pin,
-        D5: Pin,
-        D6: Pin,
-        D7: Pin,
-        D8: Pin,
-        D9: Pin,
-        D10: Pin,
-        D11: Pin,
-        D12: Pin,
-        D13: Pin,
-        D14: Pin,
-        D15: Pin,
-    > WriteOnlyDataCommand
-    for FsmcLcd<
-        CS,
-        RD,
-        RW,
-        RS,
-        D0,
-        D1,
-        D2,
-        D3,
-        D4,
-        D5,
-        D6,
-        D7,
-        D8,
-        D9,
-        D10,
-        D11,
-        D12,
-        D13,
-        D14,
-        D15,
-    >
-{
+impl<'d> WriteOnlyDataCommand for FsmcLcd<'d> {
     fn send_commands(&mut self, cmd: DataFormat<'_>) -> Result<(), DisplayError> {
         match cmd {
             DataFormat::U8(items) => {
