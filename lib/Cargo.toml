@@ -1,6 +1,6 @@
 [package]
 name = "embassy-stm32-fsmc-display-interface"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 authors = ["Mikhail Trishchenkov <kriomant@gmail.com>"]
 description = "DisplayInterface implementation for STM32 FSMC peripheral using Embassy HAL"
